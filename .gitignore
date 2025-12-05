@@ -6,3 +6,4 @@ data
 *.log
 Anaconda3-2025.06-0-Linux-x86_64.sh
 math500-*r*.sh
+models/
