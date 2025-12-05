@@ -43,7 +43,7 @@ def process_row(row_dict):
     else:
         return None
 
-amc23 = load_dataset("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/amc23")["test"]
+amc23 = load_dataset("data/amc23")["test"]
 amc23 = amc23.to_pandas()
 
 amc23_data = []
@@ -55,11 +55,11 @@ for index, row in tqdm(amc23.iterrows(), desc="Processing rows"):
 
 print(f"total_size: {len(amc23_data)}")
 import json
-with open("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/amc23.json", "w") as f:
+with open("data/amc23.json", "w") as f:
     json.dump(amc23_data, f, indent=4)
 amc23_data = pd.DataFrame(amc23_data)
 
-parquet_path = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/amc23.parquet"
+parquet_path = "data/amc23.parquet"
 amc23_data.to_parquet(parquet_path)
 
 print(f"first row: {amc23_data.iloc[0]}")

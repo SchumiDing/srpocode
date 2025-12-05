@@ -37,8 +37,8 @@ def process_row(row_dict):
     else:
         return None
 
-aime2025I = load_dataset("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/aime2025", "AIME2025-I")["test"]
-aime2025II = load_dataset("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/aime2025", "AIME2025-II")["test"]
+aime2025I = load_dataset("data/aime2025", "AIME2025-I")["test"]
+aime2025II = load_dataset("data/aime2025", "AIME2025-II")["test"]
 aime2025I = aime2025I.to_pandas()
 aime2025II = aime2025II.to_pandas()
 aime2025 = pd.concat([aime2025I, aime2025II])
@@ -52,11 +52,11 @@ for index, row in tqdm(aime2025.iterrows(), desc="Processing rows"):
 
 print(f"total_size: {len(aime2025_data)}")
 import json
-with open("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2025.json", "w") as f:
+with open("data/aime2025.json", "w") as f:
     json.dump(aime2025_data, f, indent=4)
 aime2025_data = pd.DataFrame(aime2025_data)
 
-parquet_path = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2025.parquet"
+parquet_path = "data/aime2025.parquet"
 aime2025_data.to_parquet(parquet_path)
 
 print(f"first row: {aime2025_data.iloc[0]}")

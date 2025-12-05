@@ -43,7 +43,7 @@ def process_row(row_dict):
     else:
         return None
 
-aime2023 = load_dataset("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/aime_2023")["train"]
+aime2023 = load_dataset("data/aime2023")["train"]
 aime2023 = aime2023.to_pandas()
 
 aime2023_data = []
@@ -55,11 +55,11 @@ for index, row in tqdm(aime2023.iterrows(), desc="Processing rows"):
 
 print(f"total_size: {len(aime2023_data)}")
 import json
-with open("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2023.json", "w") as f:
+with open("data/aime2023.json", "w") as f:
     json.dump(aime2023_data, f, indent=4)
 aime2023_data = pd.DataFrame(aime2023_data)
 
-parquet_path = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2023.parquet"
+parquet_path = "data/aime2023.parquet"
 aime2023_data.to_parquet(parquet_path)
 
 print(f"first row: {aime2023_data.iloc[0]}")
