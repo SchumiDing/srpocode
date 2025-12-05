@@ -1,0 +1,66 @@
+
+from datasets import load_dataset
+import pandas as pd
+import random
+import numpy as np
+from tqdm import tqdm
+
+import sympy as sp
+
+
+def judge_if_sympy_solveable(answer):
+    try:
+        int(answer)
+        return True
+    except:
+        pass
+    
+    try:
+        sp.sympify(answer)
+        return True
+    except:
+        return False
+
+def process_row(row_dict):
+    question = row_dict["problem"]
+    ground_truth = row_dict["answer"]
+    instruction = 'Let\'s think step by step and put the final answer in the \\boxed{} tag. Do not repeat any sentences in the answer, and keep only one \\boxed{} tag which contains the final answer.'
+    if judge_if_sympy_solveable(ground_truth):
+        return {
+            "data_source": "deepmath",
+            "prompt": [
+                {
+                    "role": "user",
+                    "content": question + "\n" + instruction
+                }
+            ],
+            "ability": "math",
+            "reward_model": {
+                "style": "rule",
+                "ground_truth": ground_truth
+            }
+        }
+    else:
+        return None
+
+aime2024 = load_dataset("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/aime_2024")["train"]
+aime2024 = aime2024.to_pandas()
+
+aime2024_data = []
+
+for index, row in tqdm(aime2024.iterrows(), desc="Processing rows"):
+    data = process_row(row)
+    if data is not None:
+        aime2024_data.append(data)
+
+print(f"total_size: {len(aime2024_data)}")
+import json
+with open("/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2024.json", "w") as f:
+    json.dump(aime2024_data, f, indent=4)
+aime2024_data = pd.DataFrame(aime2024_data)
+
+parquet_path = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2024.parquet"
+aime2024_data.to_parquet(parquet_path)
+
+print(f"first row: {aime2024_data.iloc[0]}")
+print(f"Length of aime2024_data: {len(aime2024_data)}")

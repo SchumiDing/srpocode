@@ -1,0 +1,24 @@
+
+# 模型名称简称映射表
+# 格式: 简称|完整模型名称|模型路径
+# 使用简称作为参数时，脚本会自动查找对应的完整路径
+
+qwen1.5m|Qwen1.5-Math|/mnt/shared-storage-user/mineru4s/dingruiyi/qwen1.5math
+qwen2.5-7b-i|Qwen2.5-7B-Instruct|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-7B-Instruct
+qwen2.5-math-1.5b|Qwen2.5-Math-1.5B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-1.5B
+qwen2.5-math-1.5b-i|Qwen2.5-Math-1.5B-Instruct|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-1.5B-Instruct
+qwen2.5-math-7b|Qwen2.5-Math-7B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-7B
+qwen2.5-math-7b-i|Qwen2.5-Math-7B-Instruct|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-7B-Instruct
+qwen3-1.7b|Qwen3-1.7B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen3-1.7B
+qwen3-8b|Qwen3-8B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen3-8B
+
+# 常用模型的更简短别名
+# qwen1.5 已弃用，因为会导致 Qwen2.5-Math-1.5B 和 Qwen2-Math-1.5B 两个模型冲突
+# 请使用 qwen2.5-math-1.5b 或 qwen2-1.5b 来明确指定模型
+qwen2-1.5b|Qwen2-Math-1.5B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2-Math-1.5B
+qwen3|Qwen3-8B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen3-8B
+qwen7b|Qwen2.5-Math-7B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-7B
+qwen2.5-math-7b|Qwen2.5-Math-7B|/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-7B
+deepseek1.5|DeepSeek-R1-Distill-Qwen-1.5B|/mnt/shared-storage-user/mineru4s/dingruiyi/DeepSeek-R1-Distill-Qwen-1.5B
+llama3.2-3b|Llama-3.2-3B-Instruct|/mnt/shared-storage-user/mineru4s/dingruiyi/Llama-3.2-3B-Instruct
+llama3.2-1b|llama-3.2-1B-Instruct|/mnt/shared-storage-user/mineru4s/dingruiyi/llama-3.2-1B-Instruct
