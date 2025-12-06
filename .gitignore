@@ -1,11 +1,12 @@
-checkpoints/
 random
 tmp
 uniform
 data
 *.log
+*.out
 Anaconda3-2025.06-0-Linux-x86_64.sh
 math500-*r*.sh
 models/
 __pycache__
 *__pycache__*
+checkpoints
