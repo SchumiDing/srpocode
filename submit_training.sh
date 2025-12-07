@@ -75,8 +75,8 @@ if [ -z "$MODEL_PATH" ]; then
 fi
 
 # 验证算法类型
-if [ "$ALGORITHM" != "grpo" ] && [ "$ALGORITHM" != "srpo3" ] && [ "$ALGORITHM" != "srpo2" ] && [ "$ALGORITHM" != "rflux" ]; then
-    echo "错误: 算法类型必须是 'grpo' 或 'srpo3' 或 'srpo2'，当前为: $ALGORITHM"
+if [ "$ALGORITHM" != "grpo" ] && [ "$ALGORITHM" != "srpo3" ] && [ "$ALGORITHM" != "srpo2" ] && [ "$ALGORITHM" != "rflux" ] && [ "$ALGORITHM" != "srpo4" ]; then
+    echo "错误: 算法类型必须是 'grpo' 或 'srpo3' 或 'srpo2' 或 'srpo4'，当前为: $ALGORITHM"
     exit 1
 fi
 

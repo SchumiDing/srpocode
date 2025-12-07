@@ -1,5 +1,6 @@
+source /mnt/shared-storage-user/mineru4s/dingruiyi/anaconda/bin/activate
+conda activate verl
+model_path=$1
+dataset_path=$2
 
-rlaunch --gpu=1 --memory=64000 --cpu=4 \
-    --charged-group=mineru4sh_gpu --private-machine=yes \
-    --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
-    -- bash -c "python testmodel.py"
+python /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/naivetest.py --model_path $model_path --dataset_path $dataset_path

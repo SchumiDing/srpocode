@@ -1,13 +1,21 @@
 # check if path and output are provided
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: merge <checkpoint_path> <output_path>"
+    echo "Usage: testrj <checkpoint_path> <dataset_path>"
     exit 1
 fi
-rjob delete merger5
-path=$1
-output=$2
+
+path=$2
+dataset_path=$1
+
+
+name1="${path##*/}"
+name2="${dataset_path##*/}"
+name1="${name1//./}"
+name2="${name2//./}"
+name="$name1-$name2-tester"
+rjob delete $name
 rjob submit \
-    --name=merger5  \
+    --name=$name  \
     --gpu=1 \
     --memory=320000 \
     --cpu=16 \
@@ -16,4 +24,4 @@ rjob submit \
     --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
     --image=registry.h.pjlab.org.cn/ailab-puyu-puyu_gpu/yehc:torch-2.6.0-57d787c2-0627 \
     --host-network=true \
-    -- bash -c "bash /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/merghf.sh $path $output"
+    -- bash -c "bash /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/test.sh $path $dataset_path"

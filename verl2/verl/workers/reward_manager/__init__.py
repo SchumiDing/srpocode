@@ -22,6 +22,7 @@ from .orlm import ORLMRewardManager
 from .naive2 import Naive2RewardManager
 from .rflux import RfluxRewardManager
 from .naive3 import Naive3RewardManager
+from .naive4 import Naive4RewardManager
 # Note(haibin.lin): no need to include all reward managers here in case of complicated dependencies
 __all__ = [
     "BatchRewardManager",
@@ -35,5 +36,6 @@ __all__ = [
     "Naive2RewardManager",
     "RfluxRewardManager",
     "Naive3RewardManager",
+    "Naive4RewardManager",
 ]
     

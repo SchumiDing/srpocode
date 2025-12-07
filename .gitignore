@@ -10,3 +10,8 @@ models/
 __pycache__
 *__pycache__*
 checkpoints
+tmp.sh
+qwen7grpo
+qwen7rflux
+qwen7srpo2
+qwen7srpo3

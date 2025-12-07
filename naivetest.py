@@ -17,7 +17,17 @@ num_seqs = 32
 # -----------------------------------------------------------
 # 2. 路径
 # -----------------------------------------------------------
-MODEL_PATH = "tmp"
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_path", type=str, required=True)
+parser.add_argument("--dataset_path", type=str, required=True)
+args = parser.parse_args()
+
+MODEL_PATH = args.model_path
+VAL_DATA_PATH = args.dataset_path
+
+# MODEL_PATH = "tmp"
 # MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen7grpo8"
 # MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen7srpo2r8"
 # MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qweb7srpo2r82"
@@ -52,7 +62,7 @@ MODEL_PATH = "tmp"
 # VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/olymEasy.parquet"
 # VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/valAime_data.parquet"
 # VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/valOlympiads_data.parquet"
-VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/amc23.parquet"
+# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/amc23.parquet"
 # VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime.parquet"
 
 
