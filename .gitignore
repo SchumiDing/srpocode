@@ -15,3 +15,7 @@ qwen7grpo
 qwen7rflux
 qwen7srpo2
 qwen7srpo3
+.yaml
+*.yaml
+*.yml
+*.txt
