@@ -174,6 +174,72 @@ def parse_qwen_conversation(text: str) -> Tuple[Optional[str], Optional[str]]:
         #         user_content = parts[0].strip()
     
     return (system_content, user_content)
+
+def parse_deepseek_conversation(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    解析DeepSeek聊天模板应用后的文本，提取system内容和user内容
+    
+    DeepSeek chat template格式:
+    - System prompt: 直接跟在bos_token后面，在第一个<｜User｜>之前
+    - User消息: <｜User｜> + content
+    - Assistant消息: <｜Assistant｜> + content + <｜end▁of▁sentence｜>
+    
+    Args:
+        text: 应用了DeepSeek chat template后的文本
+        
+    Returns:
+        Tuple[Optional[str], Optional[str]]: (system_content, user_content)
+    """
+    system_content = None
+    user_content = None
+    
+    # DeepSeek使用全角竖线 ｜ (U+FF5C) 和特殊下划线 ▁ (U+2581)
+    # 提取system content: 在第一个<｜User｜>之前的内容（去掉可能的bos_token）
+    user_tag = '<｜User｜>'
+    assistant_tag = '<｜Assistant｜>'
+    
+    # 找到第一个User标记的位置
+    first_user_pos = text.find(user_tag)
+    
+    if first_user_pos > 0:
+        # system content 是 bos_token 之后到第一个 <｜User｜> 之前的内容
+        system_content = text[:first_user_pos].strip()
+        # 去掉可能的bos_token (如 <｜begin▁of▁sentence｜>)
+        bos_pattern = r'^<｜begin▁of▁sentence｜>'
+        system_content = re.sub(bos_pattern, '', system_content).strip()
+        if not system_content:
+            system_content = None
+    
+    # 提取user content: <｜User｜> 到下一个标记之间的内容
+    if first_user_pos != -1:
+        # 从第一个User标记之后开始
+        after_user_tag = first_user_pos + len(user_tag)
+        remaining_text = text[after_user_tag:]
+        
+        # 找到下一个标记的位置（可能是Assistant、tool相关标记等）
+        # 可能的结束标记
+        end_markers = [
+            '<｜Assistant｜>',
+            '<｜tool▁calls▁begin｜>',
+            '<｜tool▁outputs▁begin｜>',
+            '<｜end▁of▁sentence｜>',
+            '<｜User｜>',  # 如果有多轮对话
+        ]
+        
+        # 找到最近的结束标记
+        end_pos = len(remaining_text)
+        for marker in end_markers:
+            pos = remaining_text.find(marker)
+            if pos != -1 and pos < end_pos:
+                end_pos = pos
+        
+        user_content = remaining_text[:end_pos].strip()
+        if not user_content:
+            user_content = None
+    
+    return (system_content, user_content)
+
+
 def compare_latex_expressions(expr1: str, expr2: str) -> bool:
     if expr1.strip() == expr2.strip():
         return True
@@ -353,7 +419,8 @@ class Naive2RewardManager:
             start_idx = 0
             # print("input", self.tokenizer.decode(sysusr), flush=True)
             # sys, usr = parse_llama3_conversation(self.tokenizer.decode(sysusr))
-            sys, usr = parse_qwen_conversation(self.tokenizer.decode(sysusr))
+            # sys, usr = parse_qwen_conversation(self.tokenizer.decode(sysusr))
+            sys, usr = parse_deepseek_conversation(self.tokenizer.decode(sysusr))
             # print("sys", sys, flush=True)
             # print("usr", usr, flush=True)
             rollout_args.append((ground_truth[i], self.tokenizer.decode(sample[:outLength-1]), outLength))

@@ -311,7 +311,7 @@ rjob submit \
     --name="$RJOB_NAME" \
     --gpu="$NUM_GPUS" \
     --memory=1000000 \
-    --cpu=170 \
+    --cpu=128 \
     --charged-group=mineru4sh_gpu \
     --private-machine=group \
     --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
