@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 测试 rmserver API 接口
-接口地址:  http://10.102.98.149:4997/v1/step_rewards
+接口地址:  http://10.102.248.155:4997/v1/step_rewards
 """
 
 import requests
@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class RMServerTester:
-    def __init__(self, base_url: str = " http://10.102.98.149:4997"):
+    def __init__(self, base_url: str = "http://10.102.248.155:4997"):
         self.base_url = base_url
         self.step_rewards_url = f"{base_url}/v1/step_rewards"
         self.health_url = f"{base_url}/health"

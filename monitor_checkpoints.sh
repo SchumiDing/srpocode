@@ -136,7 +136,7 @@ while true; do
         
         # 标记为已处理
         mark_as_processed "$CHECKPOINT_PATH"
-        
+        break
         echo ""
         echo "=========================================="
         echo "Evaluation task submitted successfully!"

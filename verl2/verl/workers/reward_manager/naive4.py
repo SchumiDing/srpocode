@@ -12,7 +12,7 @@ from transformers import AutoModel, AutoTokenizer
 import multiprocessing as mp
 import torch.nn.functional as F
 
-endpoint = "http://100.101.248.164:4997/v1/step_rewards"
+endpoint = "http://10.102.248.155:4997/v1/step_rewards"
 logger = logging.getLogger(__name__)
 proxies = {
     "http": None,
