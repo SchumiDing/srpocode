@@ -3,11 +3,13 @@ if [ -z "$1" ] || [ -z "$2" ]; then
     echo "Usage: merge <checkpoint_path> <output_path>"
     exit 1
 fi
-rjob delete merger5
+
 path=$1
 output=$2
+name=${output//./}-merger
+rjob delete $name
 rjob submit \
-    --name=merger5  \
+    --name=$name  \
     --gpu=1 \
     --memory=320000 \
     --cpu=16 \

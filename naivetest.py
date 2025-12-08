@@ -1,5 +1,6 @@
 # eval.py
 import os
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -124,7 +125,8 @@ def main():
         trust_remote_code=False,
         torch_dtype=torch.bfloat16
     ).to(device)
-
+    torch.manual_seed(42)
+    np.random.seed(42)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model.config.pad_token_id = tokenizer.pad_token_id

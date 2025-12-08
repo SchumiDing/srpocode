@@ -56,6 +56,7 @@ class QwenPRMService:
         with self.lock:
             # 复制messages避免修改原始数据
             messages = [msg.copy() if isinstance(msg, dict) else msg for msg in messages]
+            # print(messages, flush=True)
             messages[-1]['content'] = "<extra_0>".join(messages[-1]['content'])+"<extra_0>"
             conversation_str = self.tokenizer.apply_chat_template(
                 messages, 

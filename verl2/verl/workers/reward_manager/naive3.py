@@ -453,10 +453,9 @@ class Naive3RewardManager:
         print(len(per_sample_info), flush=True)
         for i in range(len(per_sample_info)):
             segRs[i][0] = torch.tensor([self.discount_reward(reward, iloc) for reward, iloc in zip(segRs[i][0], range(len(segRs[i][0])))])
-            segRs[i][0] = segRs[i][0]
             mean_seqReward.append(torch.mean(torch.tensor(segRs[i][0])))
             per_sample_info[i]['segment_rewards'] = segRs[i][0]
-
+        print(sum(segRs[i][0] for i in range(len(segRs))), flush=True)
         # 第二步：样本内归一化（segment_norms）
         segment_norms = [info['segment_rewards'] for info in per_sample_info]
         print("segment_norms[0]", segment_norms[0], flush=True)
