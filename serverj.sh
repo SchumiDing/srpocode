@@ -3,7 +3,7 @@ rjob submit \
     --name=server \
     --gpu=4 \
     --memory=320000 \
-    --cpu=16 \
+    --cpu=64 \
     --charged-group=mineru4sh_gpu \
     --private-machine=group \
     --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
