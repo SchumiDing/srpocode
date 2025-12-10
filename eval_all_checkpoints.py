@@ -83,7 +83,7 @@ def collate_fn(batch, tokenizer):
     return inputs, gts
 
 
-def evaluate_model(model_path: str, val_data_path: str, use_greedy: bool = False, 
+def evaluate_model(model_path: str, val_data_path: str, use_greedy: bool = True, 
                    batch_size: int = 4, num_seqs: int = 32, temperature: float = 0.7, 
                    top_p: float = 0.5) -> dict:
     """
@@ -286,7 +286,7 @@ def main():
         raise FileNotFoundError(f"Validation data not found: {val_data_path}")
     
     # 确定是否使用greedy解码
-    use_greedy = args.dataset in GREEDY_DATASETS
+    use_greedy = True
     
     # 找到所有checkpoint
     checkpoints = find_all_checkpoints(checkpoint_dir)

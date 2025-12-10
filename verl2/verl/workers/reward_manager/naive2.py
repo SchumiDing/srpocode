@@ -304,6 +304,7 @@ class Naive2RewardManager:
         while retry_count < max_retries:
             try:
                 response = requests.post(endpoint, json={"messages": messages}, proxies=proxies, timeout=60000)
+                msg=response
                 step_reward = response.json()['step_rewards']
                 return step_reward
             except Exception as e:
@@ -312,7 +313,7 @@ class Naive2RewardManager:
                 if retry_count < max_retries:
                     time.sleep(10)
                 else:
-                    raise Exception(f"Failed after {max_retries} retries: {e}")
+                    raise Exception(f"Failed after {max_retries} retries: {e} {msg}")
         
     def _default_seg_comp(self, l, dat) -> float:
         """
