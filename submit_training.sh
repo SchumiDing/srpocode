@@ -196,6 +196,7 @@ clean_rjob_name() {
     fi
     echo "$name"
 }
+MAX_PROMPT_LENGTH=2048
 
 # 生成实验名称和路径
 # MODEL_SHORT 已经在上面从映射表中获取或生成
@@ -234,7 +235,7 @@ python3 -m verl.trainer.main_ppo \\
     data.train_files=${TRAIN_DATA} \\
     data.val_files=${VAL_DATA} \\
     data.train_batch_size=${TOTAL_BATCH_SIZE} \\
-    data.max_prompt_length=2048\\
+    data.max_prompt_length=${MAX_PROMPT_LENGTH}\\
     data.max_response_length=$MAX_RESPONSE_LENGTH \\
     data.filter_overlong_prompts=True \\
     data.truncation='error' \\
@@ -256,8 +257,8 @@ python3 -m verl.trainer.main_ppo \\
     actor_rollout_ref.rollout.name=vllm \\
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \\
     actor_rollout_ref.rollout.n=${ROLLOUT_N} \\
-    actor_rollout_ref.rollout.max_num_batched_tokens=65536 \\
-    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=4 \\
+    actor_rollout_ref.rollout.max_num_batched_tokens=65536\\
+    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=4 \\    
     actor_rollout_ref.ref.fsdp_config.param_offload=True \\
     algorithm.use_kl_in_reward=False \\
     trainer.critic_warmup=0 \\
