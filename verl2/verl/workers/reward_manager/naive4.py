@@ -280,20 +280,21 @@ class Naive4RewardManager:
     def _default_rollout_comp(ground_truth: str, sequence: str, outLength: int) -> float:
         pattern = r'\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}'
         matches = re.findall(pattern, sequence)
+        maxLength = 8192
         if len(matches) == 0:
             # if len(sequence) > 4000:
             #     return -1.0 - len(sequence)/1000
             rw = -1.0
-            if outLength > 1024:
-                rw -= (outLength)/2048
+            if outLength > maxLength/2:
+                rw -= (outLength)/maxLength
             return rw
         predicted_answer = matches[-1]
         
         if compare_latex_expressions(predicted_answer, ground_truth):
             # print(f"Right answer: \"{predicted_answer}\" == \"{ground_truth}\"", flush=True)
             rw = 1.0
-            if outLength > 1024:
-                rw -= (outLength)/2048
+            if outLength > maxLength/2:
+                rw -= (outLength)/maxLength
             return rw
         else:
             # print(f"Wrong answer: \"{predicted_answer}\" != \"{ground_truth}\"", flush=True)
@@ -301,8 +302,8 @@ class Naive4RewardManager:
             # if len(sequence) > 4000:
             #     return -1.0 - len(sequence)/1000
             rw = -1.0
-            if outLength > 1024:
-                rw -= (outLength)/2048
+            if outLength > maxLength/2:
+                rw -= (outLength)/maxLength
             return rw
         # if len(sequence) > 1000:
         #     value -= len(sequence)/1000
