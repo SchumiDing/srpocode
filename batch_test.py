@@ -69,7 +69,6 @@ def run_test(model_path, dataset_path):
             "--dataset_path", dataset_path,
             "--test_mode", "all",
             "--output_json", json_path,
-            "1>/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/batch_evaluation_results.log", "2>/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/batch_evaluation_results.err"
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
