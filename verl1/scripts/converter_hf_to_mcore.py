@@ -388,6 +388,8 @@ def convert_checkpoint_from_transformers_to_megatron_dpskv3(
             numel += safe_copy(
                 hf_layer.mlp.gate.e_score_correction_bias, layer.mlp.router.expert_bias, skip_dtype_assert=True
             )
+            # Track one expert down-proj numel for later accounting across branches
+            numel_w2 = 0
             if tfconfig.moe_grouped_gemm:
                 for i, hf_expert in enumerate(hf_layer.mlp.experts):
                     num_experts = len(hf_layer.mlp.experts)
@@ -409,7 +411,8 @@ def convert_checkpoint_from_transformers_to_megatron_dpskv3(
                     expert = layer.mlp.experts.local_experts[i]
                     fc1_weight = torch.cat([hf_expert.gate_proj.weight, hf_expert.up_proj.weight])
                     numel += safe_copy(fc1_weight, expert.linear_fc1.weight)
-                    numel += safe_copy(hf_expert.down_proj.weight, expert.linear_fc2.weight)
+                    numel_w2 = safe_copy(hf_expert.down_proj.weight, expert.linear_fc2.weight)
+                    numel += numel_w2
             numel += safe_copy(hf_layer.post_attention_layernorm.weight, layer.pre_mlp_layernorm.weight)
             shared_fc1_weight = torch.cat(
                 [hf_layer.mlp.shared_experts.gate_proj.weight, hf_layer.mlp.shared_experts.up_proj.weight]
