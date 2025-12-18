@@ -24,4 +24,4 @@ rjob submit \
     --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
     --image=registry.h.pjlab.org.cn/ailab-puyu-puyu_gpu/yehc:torch-2.6.0-57d787c2-0627 \
     --host-network=true \
-    -- bash -c "bash /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/test.sh $path $dataset_path"
+    -- bash -c "bash /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/test.sh $path $dataset_path ${3:-all}"
