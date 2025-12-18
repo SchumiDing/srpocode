@@ -103,54 +103,30 @@ class GRPORewardManager(AbstractRewardManager):
                 rw -= (outLength)/maxLength
             return rw
 
-    def compute_for_rollout(
-        self,
-        input_ids: torch.Tensor,
-        ground_truth: List[str],
-        response_mask: torch.Tensor,
-        rollout_outputs: List[torch.Tensor],
-        entropys: torch.Tensor,
-        repeat_times: int = 1
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """GRPO main entry: compute sequence-level rewards, perform within-group normalization,
-        and broadcast to timesteps.
-        
-        GRPO core idea: normalize sequence rewards within each group (repeat_times samples)
-        to use relative advantages instead of absolute rewards.
-        
-        Args:
-            input_ids: Input token IDs [batch_size, seq_len]
-            ground_truth: List of ground truth answers
-            response_mask: Response mask [batch_size, seq_len]
-            rollout_outputs: List of token sequences (each is a tensor)
-            entropys: Entropy values [batch_size, seq_len]
-            repeat_times: Number of samples per group for within-group normalization
-            
-        Returns:
-            Tuple of (rollout_raw_rewards, betaTensor, advTensor):
-            - rollout_raw_rewards: Raw sequence rewards broadcast to timesteps [batch_size, seq_len]
-            - betaTensor: Normalized within-group relative advantages (sequence-level) [batch_size]
-            - advTensor: Per-timestep advantages [batch_size, seq_len]
-        """
-        per_sample_info: List[Dict[str, Any]] = []
-        if rollout_outputs is None:
-            return torch.zeros(0), torch.zeros(0), torch.zeros(0)
+    def compute_for_rollout(self, batch: DataProto, return_dict: bool = False) -> torch.Tensor | dict[str, Any]:
+        """Compute GRPO rewards (sequence outcome) without advantages."""
+        responses = batch.batch["responses"]
+        response_mask = batch.batch.get("response_mask", torch.ones_like(responses, dtype=torch.bool))
+        input_ids = batch.batch.get("input_ids", batch.batch["prompts"])
 
-        # Step 1: Compute sequence-level rewards (GRPO only uses sequence-level rewards)
-        print(f"Start computing rewards", flush=True)
+        ground_truth = []
+        for i in range(len(batch)):
+            data_item = batch[i]
+            gt = data_item.non_tensor_batch.get("reward_model", {}).get("ground_truth", "")
+            if isinstance(gt, (list, tuple)):
+                gt = gt[0] if len(gt) > 0 else ""
+            ground_truth.append(str(gt))
+
         rollout_args = []
-        for i in range(len(rollout_outputs)):
-            sample = rollout_outputs[i]
+        seq_lengths = []
+        for i in range(len(responses)):
+            sample = responses[i]
             stopidx = sum(response_mask[i])
             outLength = stopidx
-            rollout_args.append((ground_truth[i], self.tokenizer.decode(sample[:outLength-1]), outLength))
-            per_sample_info.append({
-                'T': len(entropys[i])
-            })
-        print(f"Start computing rollout rewards", flush=True)
-        # Use ThreadPoolExecutor instead of multiprocessing.Pool to avoid deadlock in Ray environment
-        # Ray manages its own processes, so creating subprocess pools can cause conflicts
-        max_workers = min(32, len(rollout_args))  # Limit to 32 workers to avoid resource exhaustion
+            seq_lengths.append(outLength)
+            rollout_args.append((ground_truth[i], self.tokenizer.decode(sample[:outLength - 1]), outLength))
+
+        max_workers = min(32, len(rollout_args))
         seqRewards = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {executor.submit(self._default_rollout_comp, *args): i for i, args in enumerate(rollout_args)}
@@ -161,130 +137,22 @@ class GRPORewardManager(AbstractRewardManager):
                     seqRewards[idx] = future.result()
                 except Exception as e:
                     print(f"[WARNING] Error computing reward for sample {idx}: {e}", flush=True)
-                    seqRewards[idx] = -1.0  # Default to negative reward on error
-        print(f"End computing rollout rewards", flush=True)
-        for i, seqReward in enumerate(seqRewards):
-            per_sample_info[i]['seq_reward'] = seqReward
+                    seqRewards[idx] = -1.0
 
-        rollout_raw_rewards = [info['seq_reward']+torch.zeros(len(entropys[idx])) for idx, info in enumerate(per_sample_info)]
-        rollout_raw_rewards = torch.stack(rollout_raw_rewards)
-        rollout_raw_reward = [info['seq_reward'] for info in per_sample_info]
-        print(f"Start computing advantages", flush=True)
-        
-        # Initialize all samples' beta to 0 (handle cases where batch size is not divisible by repeat_times)
-        for j in range(len(per_sample_info)):
-            per_sample_info[j]['beta'] = 0.0
-        
-        # Normalize within each group (GRPO core: within-group relative advantages)
-        # Fix: When rollout count increases, within-group sample count increases,
-        # if reward distribution becomes more concentrated, std will decrease.
-        # This causes normalized advantage signals to weaken, making training unstable.
-        # Solution: Use adaptive minimum std threshold, adjusted based on within-group sample count.
-        if repeat_times <= 8:
-            min_std = 0.1  # Base minimum std threshold
-        elif repeat_times <= 16:
-            min_std = 0.15  # Slightly increase for medium rollout count
-        else:
-            min_std = 0.2  # Further increase for large rollout count
-        
-        for i in range(len(rollout_raw_reward)//repeat_times):
-            rollout_reward = rollout_raw_reward[(i)*repeat_times:(i+1)*repeat_times]
-            mean = float(sum(rollout_reward) / len(rollout_reward))
-            # Use sample std (unbiased=True) for more accurate variance estimation
-            # When within-group sample count increases, using sample std better estimates true variance
-            reward_tensor = torch.tensor(rollout_reward, dtype=torch.float32)
-            if len(rollout_reward) > 1:
-                std = float(torch.std(reward_tensor, unbiased=True))  # Use sample std
-            else:
-                std = 0.0
-            
-            # Add adaptive minimum std threshold to prevent advantage signal weakening when rollout count increases
-            # When within-group sample count increases, if reward distribution becomes more concentrated,
-            # std will decrease. Using adaptive minimum std threshold maintains advantage signal strength.
-            std = max(std, min_std)
-            
-            if std != 0:
-                # Compute normalized scores (z-scores)
-                tz_scores = (reward_tensor - mean) / std
-            else:
-                # If std is 0, all samples have same reward, set to 0
-                tz_scores = torch.zeros(len(rollout_reward), dtype=torch.float32)
-            
-            # Assign normalized scores to beta (key fix: use tz_scores instead of raw reward)
-            for j in range(i*repeat_times, (i+1)*repeat_times):
-                per_sample_info[j]['beta'] = float(tz_scores[j-i*repeat_times].item())
-                    
-        # Step 2: Build final advantages and broadcast to timesteps
-        # GRPO broadcasts normalized within-group relative advantages (beta) to all timesteps
-        for idx, info in enumerate(per_sample_info):
-            beta = info['beta']
-            per_timestep_adv = torch.zeros(len(entropys[idx]), dtype=torch.float32) + beta
-            info['per_timestep_adv'] = per_timestep_adv
-        print(f"End computing advantages", flush=True)
+        token_level_rewards = []
+        for idx, (seq_reward, mask_len) in enumerate(zip(seqRewards, seq_lengths)):
+            rewards = torch.zeros_like(responses[idx], dtype=torch.float32)
+            valid_len = int(max(mask_len - 1, 0))
+            if valid_len >= 0:
+                rewards[valid_len] = seq_reward
+            token_level_rewards.append(rewards)
 
-        # Return normalized beta (within-group relative advantages), not raw reward
-        betaTensor = torch.tensor([info['beta'] for info in per_sample_info], dtype=torch.float32)
-        advTensor = torch.stack([info['per_timestep_adv'] for info in per_sample_info])
-        return rollout_raw_rewards, betaTensor, advTensor
+        reward_tensor = torch.stack(token_level_rewards)
+
+        if return_dict:
+            return {"reward_tensor": reward_tensor, "reward_extra_info": {}}
+        return reward_tensor
 
     def __call__(self, data: DataProto, return_dict: bool = False) -> torch.Tensor | dict[str, Any]:
-        """Compute rewards using GRPO method.
-        
-        This method extracts necessary information from DataProto and calls compute_for_rollout.
-        
-        Args:
-            data: DataProto containing batch data
-            return_dict: Whether to return dictionary with extra info
-            
-        Returns:
-            Reward tensor or dictionary with reward tensor and extra info
-        """
-        # Extract ground truth from non_tensor_batch
-        ground_truth = []
-        for i in range(len(data)):
-            data_item = data[i]
-            gt = data_item.non_tensor_batch.get("reward_model", {}).get("ground_truth", "")
-            if isinstance(gt, (list, tuple)):
-                gt = gt[0] if len(gt) > 0 else ""
-            ground_truth.append(str(gt))
-        
-        # Get rollout outputs (responses)
-        rollout_outputs = []
-        for i in range(len(data)):
-            response_ids = data.batch["responses"][i]
-            rollout_outputs.append(response_ids)
-        
-        # Get entropys if available, otherwise create zeros
-        if "entropys" in data.batch:
-            entropys = data.batch["entropys"]
-        else:
-            # Create dummy entropys if not available
-            batch_size = len(data)
-            seq_len = data.batch["responses"].shape[1]
-            entropys = torch.zeros(batch_size, seq_len, dtype=torch.float32)
-        
-        # Get repeat_times from config or use default
-        repeat_times = getattr(self, '_repeat_times', 1)
-        
-        # Call compute_for_rollout
-        rollout_raw_rewards, betaTensor, advTensor = self.compute_for_rollout(
-            input_ids=data.batch.get("input_ids", data.batch["prompts"]),
-            ground_truth=ground_truth,
-            response_mask=data.batch.get("response_mask", torch.ones_like(data.batch["responses"], dtype=torch.bool)),
-            rollout_outputs=rollout_outputs,
-            entropys=entropys,
-            repeat_times=repeat_times
-        )
-        
-        # Use advTensor as reward_tensor for compatibility
-        reward_tensor = advTensor
-        
-        if return_dict:
-            return {
-                "reward_tensor": reward_tensor,
-                "beta": betaTensor,
-                "advantages": advTensor,
-                "rollout_raw_rewards": rollout_raw_rewards,
-            }
-        else:
-            return reward_tensor
+        """Compute GRPO rewards; advantages are computed by adv estimator."""
+        return self.compute_for_rollout(batch=data, return_dict=return_dict)

@@ -105,6 +105,11 @@ class AdvantageEstimator(str, Enum):
     GPG = "gpg"
     RLOO_VECTORIZED = "rloo_vectorized"
     GRPO_VECTORIZED = "grpo_vectorized"
+    SRPO = "srpo"
+    SRPO2 = "srpo2"
+    SRPO3 = "srpo3"
+    SRPO4 = "srpo4"
+    RFLUX = "rflux"
 
 
 ADV_ESTIMATOR_REGISTRY: dict[str, Any] = {}
@@ -751,6 +756,232 @@ def compute_rloo_vectorized_outcome_advantage(
         adv = adv.unsqueeze(-1) * response_mask
 
     return adv, adv
+
+
+def _ensure_tensor(data: Any, device, dtype) -> torch.Tensor:
+    """Convert sequence rewards or other arrays to a tensor on the desired device/dtype."""
+    tensor = torch.as_tensor(data, device=device, dtype=dtype)
+    return tensor.view(-1)
+
+
+def _masked_prefix_lengths(response_mask: torch.Tensor) -> torch.Tensor:
+    """Return valid response lengths (including the end token) per sample."""
+    return response_mask.sum(dim=-1).long()
+
+
+def _mask_prefix_slice(tensor: torch.Tensor, valid: int) -> torch.Tensor:
+    """Slice the first `valid` tokens; returns empty if `valid <= 0`."""
+    if valid <= 0:
+        return tensor.new_empty((0,))
+    return tensor[:valid]
+
+
+@register_adv_est(AdvantageEstimator.SRPO)
+def compute_srpo_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    sequence_rewards: Optional[Any] = None,
+    **_: Any,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    SRPO advantage: per-token z-score of segment rewards plus sequence reward.
+    """
+    if sequence_rewards is None:
+        raise ValueError("sequence_rewards is required for SRPO advantage estimation.")
+
+    device, dtype = token_level_rewards.device, token_level_rewards.dtype
+    seq_rewards = _ensure_tensor(sequence_rewards, device=device, dtype=dtype)
+    scv = torch.sqrt(torch.tensor(1.0 / 24.0, device=device, dtype=dtype))
+
+    advantages = torch.zeros_like(token_level_rewards, dtype=dtype)
+    valid_lengths = _masked_prefix_lengths(response_mask)
+
+    for i in range(token_level_rewards.size(0)):
+        valid = int(max(valid_lengths[i].item() - 1, 0))
+        prefix = _mask_prefix_slice(token_level_rewards[i], valid)
+        if prefix.numel() > 0:
+            advantages[i, :valid] = (prefix - 0.5) / scv
+
+    advantages = (advantages + seq_rewards.view(-1, 1)) * response_mask
+    return advantages, advantages
+
+
+@register_adv_est(AdvantageEstimator.SRPO2)
+def compute_srpo2_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    sequence_rewards: Optional[Any] = None,
+    epsilon: float = 1e-6,
+    **_: Any,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    SRPO2 advantage: segment z-score plus centered sequence reward within group.
+    """
+    if sequence_rewards is None:
+        raise ValueError("sequence_rewards is required for SRPO2 advantage estimation.")
+
+    device, dtype = token_level_rewards.device, token_level_rewards.dtype
+    seq_rewards = _ensure_tensor(sequence_rewards, device=device, dtype=dtype)
+    idx = torch.as_tensor(index, device=device)
+    unique_ids = torch.unique(idx)
+
+    group_mean = torch.zeros_like(seq_rewards)
+    for gid in unique_ids:
+        mask = idx == gid
+        group_mean[mask] = seq_rewards[mask].mean()
+
+    beta = (seq_rewards - group_mean).clamp(min=-torch.finfo(dtype).max, max=torch.finfo(dtype).max)
+
+    valid_lengths = _masked_prefix_lengths(response_mask)
+    scv = torch.sqrt(torch.tensor(1.0 / 24.0, device=device, dtype=dtype))
+    advantages = torch.zeros_like(token_level_rewards, dtype=dtype)
+    for i in range(token_level_rewards.size(0)):
+        valid = int(max(valid_lengths[i].item() - 1, 0))
+        prefix = _mask_prefix_slice(token_level_rewards[i], valid)
+        if prefix.numel() > 0:
+            advantages[i, :valid] = (prefix - 0.5) / scv
+
+    advantages = (advantages + beta.view(-1, 1)) * response_mask
+    return advantages, advantages
+
+
+@register_adv_est(AdvantageEstimator.SRPO3)
+def compute_srpo3_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    sequence_rewards: Optional[Any] = None,
+    epsilon: float = 1e-6,
+    **_: Any,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    SRPO3 advantage: segment z-score plus centered (sequence reward + mean segment reward) within group.
+    """
+    if sequence_rewards is None:
+        raise ValueError("sequence_rewards is required for SRPO3 advantage estimation.")
+
+    device, dtype = token_level_rewards.device, token_level_rewards.dtype
+    seq_rewards = _ensure_tensor(sequence_rewards, device=device, dtype=dtype)
+    idx = torch.as_tensor(index, device=device)
+    valid_lengths = _masked_prefix_lengths(response_mask)
+
+    segment_means = torch.zeros_like(seq_rewards)
+    for i in range(token_level_rewards.size(0)):
+        valid = int(max(valid_lengths[i].item() - 1, 0))
+        prefix = _mask_prefix_slice(token_level_rewards[i], valid)
+        segment_means[i] = prefix.mean() if prefix.numel() > 0 else torch.tensor(0.0, device=device, dtype=dtype)
+
+    rollout_rewards = seq_rewards + segment_means
+    group_mean = torch.zeros_like(seq_rewards)
+    for gid in torch.unique(idx):
+        mask = idx == gid
+        group_mean[mask] = rollout_rewards[mask].mean()
+
+    beta = (rollout_rewards - group_mean).clamp(min=-torch.finfo(dtype).max, max=torch.finfo(dtype).max)
+
+    scv = torch.sqrt(torch.tensor(1.0 / 24.0, device=device, dtype=dtype))
+    advantages = torch.zeros_like(token_level_rewards, dtype=dtype)
+    for i in range(token_level_rewards.size(0)):
+        valid = int(max(valid_lengths[i].item() - 1, 0))
+        prefix = _mask_prefix_slice(token_level_rewards[i], valid)
+        if prefix.numel() > 0:
+            advantages[i, :valid] = (prefix - 0.5) / scv
+
+    advantages = (advantages + beta.view(-1, 1)) * response_mask
+    return advantages, advantages
+
+
+@register_adv_est(AdvantageEstimator.SRPO4)
+def compute_srpo4_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    sequence_rewards: Optional[Any] = None,
+    epsilon: float = 1e-6,
+    **_: Any,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    SRPO4 advantage: group-wise z-score over segment rewards + centered sequence reward.
+    """
+    if sequence_rewards is None:
+        raise ValueError("sequence_rewards is required for SRPO4 advantage estimation.")
+
+    device, dtype = token_level_rewards.device, token_level_rewards.dtype
+    seq_rewards = _ensure_tensor(sequence_rewards, device=device, dtype=dtype)
+    idx = torch.as_tensor(index, device=device)
+    valid_lengths = _masked_prefix_lengths(response_mask)
+
+    segment_norms = torch.zeros_like(token_level_rewards, dtype=dtype)
+    for gid in torch.unique(idx):
+        sample_mask = idx == gid
+        token_bucket: list[torch.Tensor] = []
+        for sample_idx in torch.nonzero(sample_mask, as_tuple=False).view(-1):
+            valid = int(max(valid_lengths[sample_idx].item() - 1, 0))
+            prefix = _mask_prefix_slice(token_level_rewards[sample_idx], valid)
+            if prefix.numel() > 0:
+                token_bucket.append(prefix)
+        if len(token_bucket) == 0:
+            continue
+        concat_tokens = torch.cat(token_bucket)
+        mean = concat_tokens.mean()
+        std = concat_tokens.std(unbiased=True)
+        std = torch.clamp(std, min=epsilon)
+        for sample_idx in torch.nonzero(sample_mask, as_tuple=False).view(-1):
+            valid = int(max(valid_lengths[sample_idx].item() - 1, 0))
+            prefix = _mask_prefix_slice(token_level_rewards[sample_idx], valid)
+            if prefix.numel() > 0:
+                segment_norms[sample_idx, :valid] = (prefix - mean) / std
+
+    group_mean = torch.zeros_like(seq_rewards)
+    for gid in torch.unique(idx):
+        mask = idx == gid
+        group_mean[mask] = seq_rewards[mask].mean()
+    beta = seq_rewards - group_mean
+
+    advantages = (segment_norms + beta.view(-1, 1)) * response_mask
+    return advantages, advantages
+
+
+@register_adv_est(AdvantageEstimator.RFLUX)
+def compute_rflux_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    sequence_rewards: Optional[Any] = None,
+    epsilon: float = 1e-6,
+    **_: Any,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    RFLUX advantage: normalized sequence reward (sequence + mean segment) broadcast to tokens.
+    """
+    if sequence_rewards is None:
+        raise ValueError("sequence_rewards is required for RFLUX advantage estimation.")
+
+    device, dtype = token_level_rewards.device, token_level_rewards.dtype
+    seq_rewards = _ensure_tensor(sequence_rewards, device=device, dtype=dtype)
+    idx = torch.as_tensor(index, device=device)
+    valid_lengths = _masked_prefix_lengths(response_mask)
+
+    segment_means = torch.zeros_like(seq_rewards)
+    for i in range(token_level_rewards.size(0)):
+        valid = int(max(valid_lengths[i].item() - 1, 0))
+        prefix = _mask_prefix_slice(token_level_rewards[i], valid)
+        segment_means[i] = prefix.mean() if prefix.numel() > 0 else torch.tensor(0.0, device=device, dtype=dtype)
+
+    rollout_rewards = seq_rewards + segment_means
+
+    beta = torch.zeros_like(rollout_rewards, dtype=dtype)
+    for gid in torch.unique(idx):
+        mask = idx == gid
+        group_values = rollout_rewards[mask]
+        mean = group_values.mean()
+        std = group_values.std(unbiased=True)
+        std = torch.clamp(std, min=epsilon)
+        beta[mask] = (group_values - mean) / std
+
+    advantages = beta.view(-1, 1) * response_mask
+    return advantages, advantages
 
 
 def compute_rewards(token_level_scores, old_log_prob, ref_log_prob, kl_ratio):

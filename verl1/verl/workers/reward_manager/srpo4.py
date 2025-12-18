@@ -318,174 +318,58 @@ class SRPO4RewardManager(AbstractRewardManager):
         """
         return reward
 
-    def compute_for_rollout(
-        self,
-        input_ids: torch.Tensor,
-        ground_truth: List[str],
-        response_mask: torch.Tensor,
-        rollout_outputs: List[torch.Tensor],
-        entropys: torch.Tensor,
-        repeat_times: int = 1
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """SRPO main entry: compute segment and rollout rewards, normalize and compute final advantages.
-        
-        Args:
-            input_ids: Input token IDs [batch_size, seq_len]
-            ground_truth: List of ground truth answers
-            response_mask: Response mask [batch_size, seq_len]
-            rollout_outputs: List of token sequences
-            entropys: Entropy values [batch_size, seq_len]
-            repeat_times: Number of samples per group
-            
-        Returns:
-            Tuple of (rewards_tensor, betaTensor, advTensor)
-        """
-        per_sample_info: List[Dict[str, Any]] = []
-        if rollout_outputs is None:
-            return torch.zeros(0), torch.zeros(0), torch.zeros(0)
+    def compute_for_rollout(self, batch: DataProto, return_dict: bool = False) -> torch.Tensor | dict[str, Any]:
+        """Compute SRPO4 rewards; advantages are handled by adv estimator."""
+        responses = batch.batch["responses"]
+        response_mask = batch.batch.get("response_mask", torch.ones_like(responses, dtype=torch.bool))
+        entropys = batch.batch.get(
+            "entropys", torch.zeros_like(responses, dtype=torch.float32)
+        )
+        input_ids = batch.batch.get("input_ids", batch.batch["prompts"])
 
-        data = []
-        seqRRs = []
-        outl = 0
-        
-        rollout_args = []
-        for i in range(len(rollout_outputs)):
-            sample = rollout_outputs[i]
-            sysusr = input_ids[i]
-            stopidx = sum(response_mask[i])
-            outLength = stopidx
-            outl += outLength
-            start_idx = 0
-            sys, usr = self.parse_conversation(self.tokenizer.decode(sysusr))
-            rollout_args.append((ground_truth[i], self.tokenizer.decode(sample[:outLength-1]), outLength))
-            segments = entropy_segmentation(entropys[i], start_idx, outLength, self.max_branches, self.min_gap)
-            segment_rewards_dict = {(s, e): self.tokenizer.decode(sample[s:e]) for s, e in segments}
-            data.append((len(entropys[i]), [(segment_rewards_dict, sys, usr)]))
-            per_sample_info.append({
-                'segments': segments,
-                'T': len(entropys[i]),
-                "l": sum(response_mask[i])
-            })
-        
-        print(f"Start computing rollout rewards", flush=True)
-        with mp.Pool(mp.cpu_count()) as pool:
-            print(f"Start computing sequence rewards", flush=True)
-            seqRRs = pool.starmap(self._default_rollout_comp, rollout_args)
-            print(f"End computing sequence rewards", flush=True)
-            print(f"Start computing segment rewards", flush=True)
-            segRs = pool.starmap(self._default_seg_comp, data)
-            print(f"End computing segment rewards", flush=True)
-        print(f"End computing rollout rewards", flush=True)
-        
-        for i, seqRReward in enumerate(seqRRs):
-            per_sample_info[i]['seq_reward'] = seqRReward
-        
-        print(f"outl: {outl}", flush=True)
-        print(len(per_sample_info), flush=True)
-        for i in range(len(per_sample_info)):
-            segRs[i][0] = torch.tensor([self.discount_reward(reward, iloc) for reward, iloc in zip(segRs[i][0], range(len(segRs[i][0])))])
-            per_sample_info[i]['segment_rewards'] = segRs[i][0]
-
-        # Step 2: Within-sample normalization (segment_norms)
-        segment_norms = [info['segment_rewards'] for info in per_sample_info]
-        print("segment_norms[0]", segment_norms[0], flush=True)
-
-        zscores = []
-        for j in range(0, len(segment_norms), repeat_times):
-            meanV = 0.5
-            num = 0
-            data = []
-            for i in range(j, j+repeat_times):
-                maskedLength = torch.sum(response_mask[i])
-                data.extend(segment_norms[i][:maskedLength-1].tolist())
-                num += maskedLength-1
-            meanV = torch.mean(torch.tensor(data))
-            stdV = torch.std(torch.tensor(data))
-            for i in range(j, j+repeat_times):
-                maskedLength = torch.sum(response_mask[i])
-                zscores.append((segment_norms[i][:maskedLength-1] - meanV)/stdV)
-            
-        for i, row in enumerate(segment_norms):
-            T = per_sample_info[i]['T']
-            maskedLength = torch.sum(response_mask[i])
-            row[:maskedLength-1] = zscores[i]
-        segment_norms = torch.stack(segment_norms)
-        
-        rollout_raw_reward = [info['seq_reward'] for i, info in enumerate(per_sample_info)]
-        rewards_tensor = [info['segment_rewards'] for info in per_sample_info]
-        rewards_tensor = torch.stack(rewards_tensor)
-        
-        # Step 3: Rollout-level normalization -> beta
-        for i in range(len(rollout_raw_reward)//repeat_times):
-            rollout_reward = rollout_raw_reward[(i)*repeat_times:(i+1)*repeat_times]
-            mean = float(sum(rollout_reward) / len(rollout_reward))
-            tz_scores = torch.tensor(rollout_reward)
-            tz_scores = tz_scores - mean
-            for j in range(i*repeat_times, (i+1)*repeat_times):
-                per_sample_info[j]['beta'] = tz_scores.tolist()[j-i*repeat_times]
-        
-        # Step 4: Build final advantages and broadcast to timesteps
-        for idx, info in enumerate(per_sample_info):
-            seg_norms = segment_norms[idx]
-            beta = info['beta']
-            per_timestep_adv = seg_norms + beta
-            info['per_timestep_adv'] = per_timestep_adv
-        
-        i = torch.randint(0, len(per_sample_info), (1,)).item()
-        print(f"{i}th Avg Adv: ", torch.mean(per_sample_info[i]['per_timestep_adv']), flush=True)
-        print(f"{i}th Seg Rewards: ", torch.mean(per_sample_info[i]['segment_rewards']), flush=True)
-        print(f"{i}th Beta: ", per_sample_info[i]['beta'], flush=True)
-        print(f"{i}th seq Reward: ", per_sample_info[i]['seq_reward'], flush=True)
-
-        betaTensor = torch.tensor([info["seq_reward"] for info in per_sample_info], dtype=torch.float16)
-        advTensor = torch.stack([info['per_timestep_adv'] for info in per_sample_info])
-        return rewards_tensor, betaTensor, advTensor
-
-    def __call__(self, data: DataProto, return_dict: bool = False) -> torch.Tensor | dict[str, Any]:
-        """Compute rewards using SRPO method."""
-        # Extract ground truth
         ground_truth = []
-        for i in range(len(data)):
-            data_item = data[i]
+        for i in range(len(batch)):
+            data_item = batch[i]
             gt = data_item.non_tensor_batch.get("reward_model", {}).get("ground_truth", "")
             if isinstance(gt, (list, tuple)):
                 gt = gt[0] if len(gt) > 0 else ""
             ground_truth.append(str(gt))
-        
-        # Get rollout outputs
-        rollout_outputs = []
-        for i in range(len(data)):
-            response_ids = data.batch["responses"][i]
-            rollout_outputs.append(response_ids)
-        
-        # Get entropys
-        if "entropys" in data.batch:
-            entropys = data.batch["entropys"]
-        else:
-            batch_size = len(data)
-            seq_len = data.batch["responses"].shape[1]
-            entropys = torch.zeros(batch_size, seq_len, dtype=torch.float32)
-        
-        repeat_times = getattr(self, '_repeat_times', 1)
-        
-        # Call compute_for_rollout
-        rewards_tensor, betaTensor, advTensor = self.compute_for_rollout(
-            input_ids=data.batch.get("input_ids", data.batch["prompts"]),
-            ground_truth=ground_truth,
-            response_mask=data.batch.get("response_mask", torch.ones_like(data.batch["responses"], dtype=torch.bool)),
-            rollout_outputs=rollout_outputs,
-            entropys=entropys,
-            repeat_times=repeat_times
-        )
-        
-        reward_tensor = advTensor
-        
+
+        data = []
+        rollout_args = []
+        for i in range(len(responses)):
+            sample = responses[i]
+            sysusr = input_ids[i]
+            stopidx = sum(response_mask[i])
+            outLength = stopidx
+            sys, usr = self.parse_conversation(self.tokenizer.decode(sysusr))
+            rollout_args.append((ground_truth[i], self.tokenizer.decode(sample[:outLength - 1]), outLength))
+            segments = entropy_segmentation(entropys[i], 0, outLength, self.max_branches, self.min_gap)
+            segment_rewards_dict = {(s, e): self.tokenizer.decode(sample[s:e]) for s, e in segments}
+            data.append((len(entropys[i]), [(segment_rewards_dict, sys, usr)]))
+
+        with mp.Pool(mp.cpu_count()) as pool:
+            seqRRs = pool.starmap(self._default_rollout_comp, rollout_args)
+            segRs = pool.starmap(self._default_seg_comp, data)
+
+        segment_rewards = []
+        for segR in segRs:
+            seg_tensor = torch.tensor(
+                [self.discount_reward(reward, iloc) for reward, iloc in zip(segR[0], range(len(segR[0])))],
+                dtype=torch.float32,
+            )
+            segment_rewards.append(seg_tensor)
+
+        rewards_tensor = torch.stack(segment_rewards)
+        sequence_rewards = torch.tensor(seqRRs, dtype=torch.float32)
+
         if return_dict:
             return {
-                "reward_tensor": reward_tensor,
-                "beta": betaTensor,
-                "advantages": advTensor,
-                "rewards_tensor": rewards_tensor,
+                "reward_tensor": rewards_tensor,
+                "reward_extra_info": {"sequence_rewards": sequence_rewards},
             }
-        else:
-            return reward_tensor
+        return rewards_tensor
+
+    def __call__(self, data: DataProto, return_dict: bool = False) -> torch.Tensor | dict[str, Any]:
+        """Compute SRPO4 rewards; advantages are computed separately by adv estimator."""
+        return self.compute_for_rollout(batch=data, return_dict=return_dict)

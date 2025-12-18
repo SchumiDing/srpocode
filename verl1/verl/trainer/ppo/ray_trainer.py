@@ -256,6 +256,8 @@ def compute_advantage(
             adv_kwargs["index"] = data.non_tensor_batch["uid"]
         if "reward_baselines" in data.batch:  # optional
             adv_kwargs["reward_baselines"] = data.batch["reward_baselines"]
+        if "sequence_rewards" in data.batch:  # optional, used by SRPO/RFLUX estimators
+            adv_kwargs["sequence_rewards"] = data.batch["sequence_rewards"]
 
         # calculate advantage estimator
         advantages, returns = adv_estimator_fn(**adv_kwargs)
@@ -1286,54 +1288,19 @@ class RayPPOTrainer:
                         # In bypass mode, we still need entropys for compute_for_rollout
                         # Try to get entropys from rollout output, or compute them if needed
                         if use_compute_for_rollout:
-                            # Check if entropys are available in batch (from rollout)
                             if "entropys" not in batch.batch:
                                 # Need to compute entropys for segmentation
-                                # Compute log_prob with entropy calculation
                                 with marked_timer("old_log_prob_for_entropy", timing_raw, color="blue"):
                                     old_log_prob_temp, _ = self._compute_old_log_prob(batch)
                                     entropys = old_log_prob_temp.batch["entropys"]
+                                    batch.batch["entropys"] = entropys
                             else:
                                 entropys = batch.batch["entropys"]
-                            
-                            # Extract ground truth from non_tensor_batch
-                            ground_truth = []
-                            for i in range(len(batch)):
-                                data_item = batch[i]
-                                gt = data_item.non_tensor_batch.get("reward_model", {}).get("ground_truth", "")
-                                if isinstance(gt, (list, tuple)):
-                                    gt = gt[0] if len(gt) > 0 else ""
-                                ground_truth.append(str(gt))
-                            
-                            # Get rollout outputs (responses)
-                            rollout_outputs = []
-                            for i in range(len(batch)):
-                                response_ids = batch.batch["responses"][i]
-                                rollout_outputs.append(response_ids)
-                            
-                            # Call compute_for_rollout with entropys
-                            repeat_times = self.config.actor_rollout_ref.rollout.n
-                            rewards_tensor, betaTensor, advTensor = self.reward_fn.compute_for_rollout(
-                                input_ids=batch.batch.get("input_ids", batch.batch["prompts"]),
-                                ground_truth=ground_truth,
-                                response_mask=batch.batch.get("response_mask", torch.ones_like(batch.batch["responses"], dtype=torch.bool)),
-                                rollout_outputs=rollout_outputs,
-                                entropys=entropys,
-                                repeat_times=repeat_times
-                            )
-                            
-                            # Store results in batch
-                            reward_tensor = advTensor
-                            reward_extra_infos_dict = {
-                                "beta": betaTensor.cpu().numpy().tolist() if isinstance(betaTensor, torch.Tensor) else betaTensor,
-                            }
-                            batch.batch["beta"] = betaTensor
-                            # Store reward tensors and extra info for later use in advantage phase
-                            batch.batch["_computed_reward_tensor"] = reward_tensor
-                            batch.batch["_computed_rewards_tensor"] = rewards_tensor
-                            batch.batch["_computed_reward_extra_infos"] = reward_extra_infos_dict
-                            # Mark that advantages are already computed to avoid duplicate computation
-                            batch.batch["_advantages_computed"] = True
+                            # Compute reward tensor using compute_for_rollout with full batch context
+                            batch.batch["entropys"] = entropys
+                            reward_result = self.reward_fn.compute_for_rollout(batch, return_dict=True)
+                            reward_tensor = reward_result.get("reward_tensor")
+                            reward_extra_infos_dict = reward_result.get("reward_extra_info", {})
                     else:  # Recompute old_log_probs
                         with marked_timer("old_log_prob", timing_raw, color="blue"):
                             old_log_prob, old_log_prob_mfu = self._compute_old_log_prob(batch)
@@ -1378,24 +1345,14 @@ class RayPPOTrainer:
                                     rollout_outputs.append(response_ids)
                                 
                                 # Call compute_for_rollout with entropys from old_log_prob
-                                repeat_times = self.config.actor_rollout_ref.rollout.n
-                                rewards_tensor, betaTensor, advTensor = self.reward_fn.compute_for_rollout(
-                                    input_ids=batch.batch.get("input_ids", batch.batch["prompts"]),
-                                    ground_truth=ground_truth,
-                                    response_mask=batch.batch.get("response_mask", torch.ones_like(batch.batch["responses"], dtype=torch.bool)),
-                                    rollout_outputs=rollout_outputs,
-                                    entropys=entropys,  # Use entropys from old_log_prob
-                                    repeat_times=repeat_times
-                                )
-                                
-                                # Store results in batch
-                                reward_tensor = advTensor
-                                reward_extra_infos_dict = {
-                                    "beta": betaTensor.cpu().numpy().tolist() if isinstance(betaTensor, torch.Tensor) else betaTensor,
-                                }
-                                batch.batch["beta"] = betaTensor
-                                # Mark that advantages are already computed to avoid duplicate computation
-                                batch.batch["_advantages_computed"] = True
+                                batch.batch["entropys"] = entropys
+                                reward_result = self.reward_fn.compute_for_rollout(batch, return_dict=True)
+                                reward_tensor = reward_result.get("reward_tensor")
+                                reward_extra_infos_dict = reward_result.get("reward_extra_info", {})
+                                batch.batch.pop("entropys", None)
+
+                            old_log_prob.batch.pop("entropys", None)
+                            batch = batch.union(old_log_prob)
 
                     assert "old_log_probs" in batch.batch, f'"old_log_prob" not in {batch.batch.keys()=}'
 
@@ -1412,86 +1369,61 @@ class RayPPOTrainer:
                             batch = batch.union(values)
 
                     with marked_timer("adv", timing_raw, color="brown"):
-                        # we combine with rule-based rm
-                        reward_extra_infos_dict: dict[str, list]
-                        use_compute_for_rollout = hasattr(self.reward_fn, 'compute_for_rollout')
-                        
-                        # Check if advantages were already computed by compute_for_rollout
-                        advantages_already_computed = batch.batch.get("_advantages_computed", False)
-                        
-                        if use_compute_for_rollout and advantages_already_computed:
-                            # Advantages already computed in old_log_prob/bypass step, just set token_level_scores
-                            # This avoids duplicate advantage computation
-                            # Get reward_tensor and rewards_tensor from batch (stored during compute_for_rollout)
-                            reward_tensor = batch.batch.get("_computed_reward_tensor", reward_tensor)
-                            rewards_tensor = batch.batch.get("_computed_rewards_tensor", None)
-                            
-                            # Get reward_tensor, rewards_tensor, and extra info from batch (stored during compute_for_rollout)
-                            reward_tensor = batch.batch.get("_computed_reward_tensor", reward_tensor)
-                            rewards_tensor = batch.batch.get("_computed_rewards_tensor", None)
-                            reward_extra_infos_dict = batch.batch.get("_computed_reward_extra_infos", {})
-                            
-                            batch.batch["token_level_scores"] = reward_tensor
-                            batch.batch["advantages"] = reward_tensor
-                            batch.batch["token_level_rewards"] = rewards_tensor if rewards_tensor is not None else reward_tensor
-                            batch.batch["returns"] = rewards_tensor if rewards_tensor is not None else reward_tensor
-                            
-                            if reward_extra_infos_dict:
-                                batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
-                            
-                            # Clean up temporary storage
-                            batch.batch.pop("_computed_reward_tensor", None)
-                            batch.batch.pop("_computed_rewards_tensor", None)
-                            batch.batch.pop("_computed_reward_extra_infos", None)
-                            
-                            # Remove the marker to avoid confusion
-                            batch.batch.pop("_advantages_computed", None)
-                        else:
+                        if reward_tensor is None:
                             if self.config.reward_model.launch_reward_fn_async:
                                 reward_tensor, reward_extra_infos_dict = ray.get(future_reward)
-                            batch.batch["token_level_scores"] = reward_tensor
-
-                            if reward_extra_infos_dict:
-                                batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
-
-                            # compute rewards. apply_kl_penalty if available
-                            if self.config.algorithm.use_kl_in_reward:
-                                batch, kl_metrics = apply_kl_penalty(
-                                    batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty
-                                )
-                                metrics.update(kl_metrics)
                             else:
-                                batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+                                raise ValueError("reward_tensor is None before advantage computation.")
 
-                            # Compute rollout correction: IS weights, rejection sampling, and metrics
-                            # Only runs in decoupled mode (computes once per batch using stable π_old)
-                            # In bypass mode, this is skipped - actor computes metrics from evolving π_θ vs π_rollout
-                            if (
-                                rollout_corr_config is not None
-                                and "rollout_log_probs" in batch.batch
-                                and not bypass_recomputing_logprobs  # Only in decoupled mode
-                            ):
-                                from verl.trainer.ppo.rollout_corr_helper import compute_rollout_correction_and_add_to_batch
+                        batch.batch["token_level_scores"] = reward_tensor
 
-                                # Compute IS weights, apply rejection sampling, compute metrics
-                                batch, is_metrics = compute_rollout_correction_and_add_to_batch(batch, rollout_corr_config)
-                                # IS and off-policy metrics already have rollout_corr/ prefix
-                                metrics.update(is_metrics)
-
-                            # compute advantages, executed on the driver process
-                            norm_adv_by_std_in_grpo = self.config.algorithm.get(
-                                "norm_adv_by_std_in_grpo", True
-                            )  # GRPO adv normalization factor
-
-                            batch = compute_advantage(
-                                batch,
-                                adv_estimator=self.config.algorithm.adv_estimator,
-                                gamma=self.config.algorithm.gamma,
-                                lam=self.config.algorithm.lam,
-                                num_repeat=self.config.actor_rollout_ref.rollout.n,
-                                norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
-                                config=self.config.algorithm,
+                        reward_info = reward_extra_infos_dict or {}
+                        sequence_rewards = reward_info.pop("sequence_rewards", None)
+                        if sequence_rewards is not None:
+                            batch.batch["sequence_rewards"] = torch.as_tensor(
+                                sequence_rewards, device=reward_tensor.device, dtype=reward_tensor.dtype
                             )
+                        if reward_info:
+                            batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_info.items()})
+
+                        # compute rewards. apply_kl_penalty if available
+                        if self.config.algorithm.use_kl_in_reward:
+                            batch, kl_metrics = apply_kl_penalty(
+                                batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty
+                            )
+                            metrics.update(kl_metrics)
+                        else:
+                            batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+
+                        # Compute rollout correction: IS weights, rejection sampling, and metrics
+                        # Only runs in decoupled mode (computes once per batch using stable π_old)
+                        # In bypass mode, this is skipped - actor computes metrics from evolving π_θ vs π_rollout
+                        if (
+                            rollout_corr_config is not None
+                            and "rollout_log_probs" in batch.batch
+                            and not bypass_recomputing_logprobs  # Only in decoupled mode
+                        ):
+                            from verl.trainer.ppo.rollout_corr_helper import compute_rollout_correction_and_add_to_batch
+
+                            # Compute IS weights, apply rejection sampling, compute metrics
+                            batch, is_metrics = compute_rollout_correction_and_add_to_batch(batch, rollout_corr_config)
+                            # IS and off-policy metrics already have rollout_corr/ prefix
+                            metrics.update(is_metrics)
+
+                        # compute advantages, executed on the driver process
+                        norm_adv_by_std_in_grpo = self.config.algorithm.get(
+                            "norm_adv_by_std_in_grpo", True
+                        )  # GRPO adv normalization factor
+
+                        batch = compute_advantage(
+                            batch,
+                            adv_estimator=self.config.algorithm.adv_estimator,
+                            gamma=self.config.algorithm.gamma,
+                            lam=self.config.algorithm.lam,
+                            num_repeat=self.config.actor_rollout_ref.rollout.n,
+                            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+                            config=self.config.algorithm,
+                        )
 
                     # update critic
                     if self.use_critic:

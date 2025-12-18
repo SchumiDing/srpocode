@@ -60,6 +60,17 @@ if [ "$ALGORITHM" != "grpo" ] && [ "$ALGORITHM" != "srpo3" ] && [ "$ALGORITHM" !
     exit 1
 fi
 
+# 根据算法选择对应的 advantage estimator
+ADV_ESTIMATOR="gae"
+case "$ALGORITHM" in
+    grpo) ADV_ESTIMATOR="grpo" ;;
+    srpo) ADV_ESTIMATOR="srpo" ;;
+    srpo2) ADV_ESTIMATOR="srpo2" ;;
+    srpo3) ADV_ESTIMATOR="srpo3" ;;
+    srpo4) ADV_ESTIMATOR="srpo4" ;;
+    rflux) ADV_ESTIMATOR="rflux" ;;
+esac
+
 # 数值参数校验
 if ! [[ "$NUM_GPUS" =~ ^[0-9]+$ ]] || [ "$NUM_GPUS" -le 0 ]; then
     echo "错误: GPU数量必须是正整数，当前为: $NUM_GPUS"
@@ -176,7 +187,7 @@ defaults:
   - _self_
 
 algorithm:
-  adv_estimator: NONE
+  adv_estimator: ${ADV_ESTIMATOR}
   use_kl_in_reward: false
   gamma: 1.0
   lam: 1.0

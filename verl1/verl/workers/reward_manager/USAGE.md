@@ -2,7 +2,11 @@
 
 ## Overview
 
-This directory contains reward manager implementations that combine reward computation and advantage calculation. All algorithms support multiple model output formats (Qwen, Llama3, DeepSeek) and multi-node multi-GPU inference through Ray.
+This directory contains reward manager implementations that compute reward signals
+for PPO-style training. Advantages are now computed by adv estimators (e.g.,
+`grpo`, `srpo`, `srpo2`, `srpo3`, `srpo4`, `rflux`). All algorithms support
+multiple model output formats (Qwen, Llama3, DeepSeek) and multi-node multi-GPU
+inference through Ray.
 
 ## Available Algorithms
 
@@ -201,9 +205,9 @@ The algorithms automatically:
 1. Extract ground truth from `data.non_tensor_batch["reward_model"]["ground_truth"]`
 2. Get rollout outputs from `batch.batch["responses"]`
 3. Get entropies from `batch.batch["entropys"]` (or create zeros if not available)
-4. Compute rewards and advantages using `compute_for_rollout` method
+4. Compute rewards using `compute_for_rollout(batch, return_dict=True)`, then let the configured `adv_estimator` build advantages
 
-The trainer will automatically detect if `compute_for_rollout` method exists and use it, otherwise falls back to the standard `__call__` method.
+The trainer automatically detects `compute_for_rollout` and always runs `compute_advantage`; reward managers no longer compute advantages themselves.
 
 ## Multi-Model Output Parsing Support
 

@@ -1,6 +1,8 @@
 # Reward Manager Algorithms
 
-This directory contains reward manager implementations that combine reward computation and advantage calculation.
+This directory contains reward manager implementations that compute rule-based rewards.
+Advantage computation is now handled by dedicated adv estimators (e.g., `grpo`,
+`srpo`, `srpo2`, `srpo3`, `srpo4`, `rflux`) registered in `core_algos.py`.
 
 ## Available Algorithms
 
