@@ -15,6 +15,7 @@ import json
 # 1. 单卡 batch 大小，直接在最上面改
 # -----------------------------------------------------------
 BATCH_SIZE = 4          # 根据显存调整
+REQUIRED_GPUS = 4       # 四卡推理
 # -----------------------------------------------------------
 # 2. 路径
 # -----------------------------------------------------------
@@ -28,52 +29,14 @@ parser.add_argument("--test_mode", type=str, default="all",
                     help="Test mode: all, pass@1, pass@8, pass@16, pass@32, pass@64, pass@128, pass@256, or mean32")
 parser.add_argument("--output_json", type=str, default=None,
                     help="Output results to JSON file (for batch processing)")
-args = parser.parse_args()
+args, unknown_args = parser.parse_known_args()
+if unknown_args:
+    print(f"警告：检测到未知参数 {unknown_args} ，将被忽略。")
 
 MODEL_PATH = args.model_path
 VAL_DATA_PATH = args.dataset_path
 TEST_MODE = args.test_mode
 OUTPUT_JSON = args.output_json
-
-# MODEL_PATH = "tmp"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen7grpo8"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen7srpo2r8"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qweb7srpo2r82"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen7grpo16"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen7grpo32"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen1.5math500rflux"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen1.5gsmrflux"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/gsmqwen7grpo8"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/gsmqwen7srpo2r8"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen3srpo2"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/uniform"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/random"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/qwen1.5math"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen2.5-Math-7B-Instruct"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/math500srpockpt"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/math500grpo16"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/math500grpo8"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/Qwen3-8B"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen3srpo"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen38bgrpo"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen3grpor16"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen3grpor32"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/qwen3grpo2"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/math500srpo2"
-# MODEL_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/math500srpo22"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/math500split_val.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2025.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2024.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime2023.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/gsm8k/gsm8ktest.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/olymHard.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/olymEasy.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/valAime_data.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/valOlympiads_data.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/amc23.parquet"
-# VAL_DATA_PATH = "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/aime.parquet"
-
-
 # -----------------------------------------------------------
 # 3. 工具函数
 # -----------------------------------------------------------
@@ -126,7 +89,7 @@ def collate_fn(batch, tokenizer):
 # -----------------------------------------------------------
 def evaluate_mode(model, tokenizer, loader, num_seqs, mode_name, is_mean=False):
     """评估单个模式"""
-    device = torch.device("cuda:0")
+    device = next(model.parameters()).device  # 将输入放到模型首层所在设备
     correct = 0
     incorrect = 0
     pattern = r'\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}'
@@ -235,15 +198,19 @@ def evaluate_mode(model, tokenizer, loader, num_seqs, mode_name, is_mean=False):
         return correct, incorrect, total, accuracy, f"Pass@{num_seqs}"
 
 def main():
-    device = torch.device("cuda:0")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=False, padding_side="left")
+    available_gpus = torch.cuda.device_count()
+    if available_gpus < REQUIRED_GPUS:
+        raise RuntimeError(f"需要至少 {REQUIRED_GPUS} 张 GPU 进行推理，当前仅检测到 {available_gpus} 张。")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_PATH,
         trust_remote_code=False,
-        torch_dtype=torch.bfloat16
-    ).to(device)
+        torch_dtype=torch.bfloat16,
+        device_map="auto"
+    )
     torch.manual_seed(42)
     np.random.seed(42)
+    torch.cuda.manual_seed_all(42)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model.config.pad_token_id = tokenizer.pad_token_id
