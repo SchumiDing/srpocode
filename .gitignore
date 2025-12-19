@@ -17,3 +17,5 @@ qwen1.5*
 *.yaml
 *.yml
 *.txt
+*.err
+*.xlsx

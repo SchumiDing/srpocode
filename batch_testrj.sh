@@ -14,5 +14,5 @@ rjob submit \
     --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
     --image=registry.h.pjlab.org.cn/ailab-puyu-puyu_gpu/yehc:torch-2.6.0-57d787c2-0627 \
     --host-network=true \
-    -- bash -c "bash /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/batch_test.sh"
+    -- bash -c "bash /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/batch_test.sh > /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/batch_evaluation_results.log 2> /mnt/shared-storage-user/mineru4s/dingruiyi/srpo/batch_evaluation_results.err"
 

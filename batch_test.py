@@ -64,7 +64,7 @@ def run_test(model_path, dataset_path):
     try:
         # 运行测试
         cmd = [
-            "python", "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/naivetest.py",
+            "python", "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/naivetest_vllm.py",
             "--model_path", model_path,
             "--dataset_path", dataset_path,
             "--test_mode", "all",
