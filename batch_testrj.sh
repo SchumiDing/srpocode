@@ -7,8 +7,8 @@ rjob delete $name 2>/dev/null || true
 rjob submit \
     --name=$name \
     --gpu=4 \
-    --memory=640000 \
-    --cpu=64 \
+    --memory=1280000 \
+    --cpu=170 \
     --charged-group=mineru4sh_gpu \
     --private-machine=group \
     --mount=gpfs://gpfs1/mineru4s:/mnt/shared-storage-user/mineru4s \
