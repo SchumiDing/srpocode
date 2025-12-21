@@ -5,7 +5,6 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-import ray
 import torch
 from sympy import simplify
 from sympy.parsing.latex import parse_latex
@@ -17,9 +16,9 @@ from vllm import LLM, SamplingParams
 # 1. 单卡 batch 大小（提示并行推理批量大小）
 # -----------------------------------------------------------
 BATCH_SIZE_DEFAULT = 32       # 提升吞吐，显存够可调大
+TP_SIZE_DEFAULT = 4           # 张量并行卡数
 MAX_MODEL_LEN_DEFAULT = 4096
 MAX_NEW_TOKENS_DEFAULT = 2048
-NUM_WORKERS_DEFAULT = 4       # 数据并行 worker 数量，每个占用 1 GPU
 
 # -----------------------------------------------------------
 # 2. 参数
@@ -36,9 +35,9 @@ parser.add_argument(
 )
 parser.add_argument("--output_json", type=str, default=None, help="Output results to JSON file (for batch processing)")
 parser.add_argument("--batch_size", type=int, default=BATCH_SIZE_DEFAULT, help="vLLM 侧一次送入的 prompt 数")
+parser.add_argument("--tp_size", type=int, default=TP_SIZE_DEFAULT, help="tensor parallel size，多卡并行")
 parser.add_argument("--max_model_len", type=int, default=MAX_MODEL_LEN_DEFAULT, help="上下文最大长度")
 parser.add_argument("--max_new_tokens", type=int, default=MAX_NEW_TOKENS_DEFAULT, help="生成最大新 token 数")
-parser.add_argument("--num_workers", type=int, default=NUM_WORKERS_DEFAULT, help="Ray 数据并行 worker 数，每个占 1 GPU")
 args, unknown_args = parser.parse_known_args()
 if unknown_args:
     print(f"警告：检测到未知参数 {unknown_args} ，将被忽略。")
@@ -48,9 +47,9 @@ VAL_DATA_PATH = args.dataset_path
 TEST_MODE = args.test_mode
 OUTPUT_JSON = args.output_json
 BATCH_SIZE = args.batch_size
+TP_SIZE = args.tp_size
 MAX_MODEL_LEN = args.max_model_len
 MAX_NEW_TOKENS = args.max_new_tokens
-NUM_WORKERS = args.num_workers
 
 # -----------------------------------------------------------
 # 3. 工具函数
@@ -86,47 +85,30 @@ def chunk_list(xs: List, size: int):
 
 
 # -----------------------------------------------------------
-# 4. 主流程（Ray + vLLM 数据并行）
+# 4. 主流程（vLLM 张量并行）
 # -----------------------------------------------------------
-def build_sampling_kwargs(num_seqs: int, is_mean: bool) -> dict:
+def build_sampling(num_seqs: int, is_mean: bool) -> SamplingParams:
     # pass@1: 不采样；其它：采样
     if num_seqs == 1:
-        return dict(
+        return SamplingParams(
             n=1,
             temperature=0.0,
             top_p=1.0,
             max_tokens=MAX_NEW_TOKENS,
             seed=42,
         )
-    return dict(
+    return SamplingParams(
         n=num_seqs,
-        temperature=0.4,
+        temperature=0.7,
         top_p=0.90,
         max_tokens=MAX_NEW_TOKENS,
         seed=42,
     )
 
 
-@ray.remote(num_gpus=1)
-class VLLMWorker:
-    def __init__(self, model_path: str, max_model_len: int):
-        self.llm = LLM(
-            model=model_path,
-            trust_remote_code=False,
-            tensor_parallel_size=1,  # 数据并行：每个 worker 单卡
-            dtype="bfloat16",
-            max_model_len=max_model_len,
-        )
-
-    def generate_batch(self, prompts: List[str], sampling_kwargs: dict):
-        sampling_params = SamplingParams(**sampling_kwargs)
-        results = self.llm.generate(prompts, sampling_params=sampling_params)
-        # 返回文本列表列表：len=batch，内层 len=n
-        return [[gen.text for gen in res.outputs] for res in results]
-
-
 def evaluate_mode(
-    workers: List,
+    llm: LLM,
+    tokenizer,
     prompts: List[str],
     gts: List[str],
     num_seqs: int,
@@ -136,22 +118,16 @@ def evaluate_mode(
     correct = 0
     incorrect = 0
     pattern = r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}"
-    sampling_kwargs = build_sampling_kwargs(num_seqs, is_mean)
-    worker_count = len(workers)
+    sampling_params = build_sampling(num_seqs, is_mean)
 
     pbar = tqdm(total=len(prompts), desc=f"Evaluating {mode_name}", unit="batch")
-    futures = []
-    widx = 0
     for batch_prompts, batch_gts in zip(chunk_list(prompts, BATCH_SIZE), chunk_list(gts, BATCH_SIZE)):
-        fut = workers[widx].generate_batch.remote(batch_prompts, sampling_kwargs)
-        futures.append((fut, batch_gts))
-        widx = (widx + 1) % worker_count
-
-    for fut, batch_gts in futures:
-        batch_generations = ray.get(fut)  # List[List[str]]
-        for generations, gt in zip(batch_generations, batch_gts):
+        results = llm.generate(batch_prompts, sampling_params=sampling_params)
+        # results 与 batch_prompts 对齐
+        for res, gt in zip(results, batch_gts):
+            generations = res.outputs  # list of Generation
             if num_seqs == 1:
-                resp = generations[0]
+                resp = generations[0].text
                 matches = re.findall(pattern, resp)
                 if matches:
                     ans = matches[-1]
@@ -164,7 +140,8 @@ def evaluate_mode(
             else:
                 if is_mean:
                     correct_count = 0
-                    for resp in generations:
+                    for gen in generations:
+                        resp = gen.text
                         matches = re.findall(pattern, resp)
                         if matches:
                             ans = matches[-1]
@@ -174,7 +151,8 @@ def evaluate_mode(
                     incorrect += (num_seqs - correct_count)
                 else:
                     found = False
-                    for resp in generations:
+                    for gen in generations:
+                        resp = gen.text
                         matches = re.findall(pattern, resp)
                         if matches:
                             ans = matches[-1]
@@ -186,7 +164,7 @@ def evaluate_mode(
                     else:
                         incorrect += 1
 
-        pbar.update(len(batch_gts))
+        pbar.update(len(batch_prompts))
         total = correct + incorrect
         accuracy = correct / total if total > 0 else 0.0
         pbar.set_postfix(
@@ -206,17 +184,17 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=False, padding_side="left")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    ray.init(ignore_reinit_error=True)
-    available_gpus = int(ray.cluster_resources().get("GPU", 0))
-    if available_gpus <= 0:
-        raise RuntimeError("Ray 未检测到可用 GPU。")
-    if NUM_WORKERS > available_gpus:
-        print(f"警告：请求 {NUM_WORKERS} 个 worker，但仅检测到 {available_gpus} 张 GPU，将使用 {available_gpus} 个 worker。")
-        num_workers = available_gpus
-    else:
-        num_workers = NUM_WORKERS
-    print(f"使用 Ray 数据并行：workers={num_workers}，每个 1 GPU，无张量并行，模型={MODEL_PATH}")
-    workers = [VLLMWorker.remote(MODEL_PATH, MAX_MODEL_LEN) for _ in range(num_workers)]
+    available_gpus = torch.cuda.device_count()
+    if available_gpus < TP_SIZE:
+        raise RuntimeError(f"请求 TP_SIZE={TP_SIZE}，但仅检测到 {available_gpus} 张 GPU，请检查资源或 CUDA_VISIBLE_DEVICES。")
+    print(f"使用 vLLM 张量并行：TP={TP_SIZE}，模型={MODEL_PATH}")
+    llm = LLM(
+        model=MODEL_PATH,
+        trust_remote_code=False,
+        tensor_parallel_size=TP_SIZE,
+        dtype="bfloat16",
+        max_model_len=MAX_MODEL_LEN,
+    )
 
     torch.manual_seed(42)
     np.random.seed(42)
@@ -269,7 +247,7 @@ def main():
         print("=" * 60)
 
         correct, incorrect, total, accuracy, description = evaluate_mode(
-            workers, prompts, gts, num_seqs, mode_name, is_mean
+            llm, tokenizer, prompts, gts, num_seqs, mode_name, is_mean
         )
 
         results[mode_name] = {
