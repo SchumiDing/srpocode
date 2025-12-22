@@ -21,7 +21,7 @@ NUM_GPUS=8                # 单机 GPU 数
 NUM_NODES=1               # 节点数
 MAX_PROMPT_LENGTH=2048
 MAX_RESPONSE_LENGTH=2048
-SAVE_FREQ=100             # checkpoint 保存间隔
+SAVE_FREQ=93             # checkpoint 保存间隔
 
 # 训练元信息
 PROJECT_NAME="verl_srpo_${DATASET_NAME}"
