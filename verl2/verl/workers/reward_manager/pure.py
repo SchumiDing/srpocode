@@ -356,7 +356,7 @@ class PureRewardManager:
     def _default_rollout_comp(ground_truth: str, sequence: str, outLength: int) -> float:
         pattern = r'\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}'
         matches = re.findall(pattern, sequence)
-        maxLength = 8192
+        maxLength = 2048
         if len(matches) == 0:
             # if len(sequence) > 4000:
             #     return -1.0 - len(sequence)/1000
