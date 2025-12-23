@@ -286,7 +286,7 @@ class PureRewardManager:
         self.tokenizer = tokenizer
         self.scv=(torch.sqrt(torch.tensor(1/24)))
         self.lamb = 0.9
-        self.temperature = 1.0
+        self.temperature = 0.1
     def make_step_rewards(self,logits, token_masks):
         probabilities = F.softmax(logits, dim=-1)
         probabilities = probabilities * token_masks.unsqueeze(-1) # bs, seq_len, num_labels

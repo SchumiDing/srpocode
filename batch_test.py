@@ -40,7 +40,7 @@ METRICS = ["pass@1", "pass@8", "pass@16", "pass@32", "pass@64", "pass@128", "pas
 # vLLM 配置
 VLLM_TP_SIZE = 4       # 张量并行卡数
 VLLM_BATCH_SIZE = 128   # vLLM 侧批量大小，可按显存调大
-VLLM_MAX_NEW_TOKENS = 2048  # 控制生成长度，减少显存与耗时
+VLLM_MAX_NEW_TOKENS = 8192  # 控制生成长度，减少显存与耗时
 
 
 def extract_model_name(model_path):
