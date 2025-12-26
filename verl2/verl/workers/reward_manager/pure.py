@@ -345,9 +345,9 @@ class PureRewardManager:
             minV = step_reward[minLoc]
             for i in range(len(step_reward)):
                 if i < minLoc:
-                    step_reward[i] = minV
+                    step_rewards[i] = minV
                 else:
-                    step_reward[i] = 0
+                    step_rewards[i] = 0
             segment_reward = torch.zeros(l) 
             for reward, rng in zip(step_reward, segment_slice[0].keys()):
                 segment_reward[rng[1]-1] = reward
