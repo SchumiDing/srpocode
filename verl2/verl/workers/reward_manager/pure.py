@@ -335,18 +335,19 @@ class PureRewardManager:
                 ]
             msgs.append(message)
         step_rewards = self.process_request(msgs)
-        sum_ = sum([torch.exp(-x/self.temperature) for x in step_rewards])
-        for i in range(len(step_rewards)):
-            step_rewards[i] = torch.exp(-step_rewards[i]/self.temperature) / sum_ * step_rewards[i]
-        minLoc = torch.argmin(step_rewards)
-        minV = step_rewards[minLoc]
-        for i in range(len(step_rewards)):
-            if i < minLoc:
-                step_rewards[i] = minV
-            else:
-                step_rewards[i] = 0
+
         segment_rewards = []
         for step_reward, segment_slice in zip(step_rewards, dat):
+            sum_ = sum([torch.exp(-x/self.temperature) for x in step_reward])
+            for i in range(len(step_reward)):
+                step_reward[i] = torch.exp(-step_reward[i]/self.temperature) / sum_ * step_reward[i]
+            minLoc = torch.argmin(step_reward)
+            minV = step_reward[minLoc]
+            for i in range(len(step_reward)):
+                if i < minLoc:
+                    step_reward[i] = minV
+                else:
+                    step_reward[i] = 0
             segment_reward = torch.zeros(l) 
             for reward, rng in zip(step_reward, segment_slice[0].keys()):
                 segment_reward[rng[1]-1] = reward
