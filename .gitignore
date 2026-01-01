@@ -11,8 +11,7 @@ __pycache__
 *__pycache__*
 checkpoints
 tmp.sh
-qwen7*
-qwen1.5*
+trained_models/
 .yaml
 *.yaml
 *.yml
