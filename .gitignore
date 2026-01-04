@@ -20,4 +20,4 @@ trained_models/
 *.xlsx
 verl.tar.gz
 batch_evaluation_results
-batch_evaluation_results_pre
+batch_evaluation_results_pre*
