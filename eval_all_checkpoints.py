@@ -21,6 +21,7 @@ from sympy import simplify
 from sympy.parsing.latex import parse_latex
 from merge_to_hf import merge_checkpoint_to_huggingface
 
+torch.manual_seed(42)
 # 数据集路径映射
 DATASET_PATHS = {
     "math500": "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/data/math500split_val.parquet",

@@ -15,7 +15,7 @@ import json
 # 1. 单卡 batch 大小，直接在最上面改
 # -----------------------------------------------------------
 BATCH_SIZE = 4          # 根据显存调整
-REQUIRED_GPUS = 4       # 四卡推理
+REQUIRED_GPUS = 1 
 # -----------------------------------------------------------
 # 2. 路径
 # -----------------------------------------------------------
@@ -115,7 +115,7 @@ def evaluate_mode(model, tokenizer, loader, num_seqs, mode_name, is_mean=False):
                     **inputs,
                     max_new_tokens=2048,
                     do_sample=True,
-                    temperature=0.4,
+                    temperature=0.7,
                     top_p=0.90,
                     pad_token_id=tokenizer.pad_token_id,
                     eos_token_id=tokenizer.eos_token_id,

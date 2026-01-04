@@ -12,14 +12,16 @@ import time
 
 # 模型列表
 MODELS = [
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7grpo",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7srpo2",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7rflux",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7srpo3",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5grpo",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5srpo2",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5rflux",
-    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5srpo3",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7grpo",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7srpo2",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7rflux",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen7srpo3",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5grpo",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5srpo2",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5rflux",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/qwen1.5srpo3",
+    # "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/pure1.5",
+    "/mnt/shared-storage-user/mineru4s/dingruiyi/srpo/trained_models/pure7",
 ]
 
 # 数据集列表

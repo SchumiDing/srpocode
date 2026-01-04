@@ -127,6 +127,10 @@ fi
 # 构建Python命令（在rjob任务内部激活conda环境）
 PYTHON_CMD="source /mnt/shared-storage-user/mineru4s/dingruiyi/anaconda/bin/activate && conda activate verl && cd /mnt/shared-storage-user/mineru4s/dingruiyi/srpo && python eval_all_checkpoints.py --checkpoint_dir '$CHECKPOINT_DIR' --dataset $DATASET --batch_size $BATCH_SIZE"
 
+
+# [a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*
+JOB_NAME=$(echo "$JOB_NAME" | sed 's/[^a-z0-9]//g' | sed 's/--*/-/g' | sed 's/^-\+//' | sed 's/-\+$//' | sed 's/^[a-z0-9]//' | sed 's/[a-z0-9]$//' | sed 's/^-//' | sed 's/-$//')
+
 # 删除旧任务（如果存在）
 echo "Deleting old job if exists: $JOB_NAME"
 rjob delete "$JOB_NAME" 2>/dev/null || true

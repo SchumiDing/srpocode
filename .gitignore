@@ -19,3 +19,5 @@ trained_models/
 *.err
 *.xlsx
 verl.tar.gz
+batch_evaluation_results
+batch_evaluation_results_pre

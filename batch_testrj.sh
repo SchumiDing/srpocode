@@ -1,7 +1,7 @@
 #!/bin/bash
 # 通过 rjob 提交批量测试任务
 
-name="batch-evaluation-test"
+name="batch-evaluation-test-pure7"
 rjob delete $name 2>/dev/null || true
 
 rjob submit \
